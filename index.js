@@ -217,6 +217,23 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 // ─────────────────────────────────────────
+//  VOUCH CHANNEL AUTO-REACT
+// ─────────────────────────────────────────
+const VOUCH_CHANNEL_ID = '1475548871483723887';
+const VOUCH_EMOJI_ID   = '1475862816861720588';
+
+client.on('messageCreate', async (vouchMsg) => {
+    if (vouchMsg.author.bot) return;
+    if (vouchMsg.channel.id !== VOUCH_CHANNEL_ID) return;
+    try {
+        const emoji = vouchMsg.guild.emojis.cache.get(VOUCH_EMOJI_ID);
+        if (emoji) await vouchMsg.react(emoji);
+    } catch (err) {
+        logger(`Vouch react error: ${err.message}`);
+    }
+});
+
+// ─────────────────────────────────────────
 //  ANTI-SPAM & COIN EARN
 // ─────────────────────────────────────────
 let lastAuthorId    = null;
@@ -344,16 +361,20 @@ client.on('messageCreate', async (message) => {
     if (command === 'coins' || command === 'bal') {
         const target = message.mentions.users.first() || message.author;
         const data   = getUserData(target.id);
-        const rank   = Object.entries(db.users).sort(([,a],[,b]) => b.coins - a.coins).findIndex(([id]) => id === target.id) + 1;
+        const nonAdminUsers = Object.entries(db.users).filter(([id]) => {
+            const mem = message.guild.members.cache.get(id);
+            return mem && !mem.permissions.has(PermissionsBitField.Flags.Administrator) && !mem.roles.cache.some(r => r.name === 'bot perms');
+        });
+        const rank = nonAdminUsers.sort(([,a],[,b]) => b.coins - a.coins).findIndex(([id]) => id === target.id) + 1;
         message.channel.send({ embeds: [
             new EmbedBuilder()
-                .setTitle(`${coinEmoji} ${target.username}'s Wallet`)
                 .setDescription(
-                    `╔══════════════════════╗\n` +
-                    `  ${coinEmoji}  **Coins:** ${data.coins}\n` +
-                    `  🏅  **Rank:** #${rank || '?'}\n` +
-                    `  ⚠️  **Warns:** ${data.warns}\n` +
-                    `╚══════════════════════╝`
+                    `# ╔═══ 💰 WALLET ═══╗\n` +
+                    `**👤 User:** ${target.username}\n` +
+                    `${coinEmoji} **Coins:** ${data.coins}\n` +
+                    `🏅 **Rank:** #${rank || 'N/A'}\n` +
+                    `⚠️ **Warns:** ${data.warns}\n` +
+                    `# ╚═════════════════╝`
                 )
                 .setThumbnail(target.displayAvatarURL({ dynamic: true }))
                 .setColor(0xF1C40F)
@@ -448,7 +469,12 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === 'leaderboard' || command === 'lb') {
+        await message.guild.members.fetch();
         const sorted = Object.entries(db.users)
+            .filter(([id]) => {
+                const mem = message.guild.members.cache.get(id);
+                return mem && !mem.permissions.has(PermissionsBitField.Flags.Administrator) && !mem.roles.cache.some(r => r.name === 'bot perms');
+            })
             .sort(([, a], [, b]) => b.coins - a.coins)
             .slice(0, 10);
         const medals = ['🥇', '🥈', '🥉'];
