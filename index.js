@@ -169,6 +169,11 @@ client.once('ready', async () => {
             logger(`Resumed giveaway: "${gw.prize}" ends in ${formatDuration(remaining)}`);
         }
     }
+    // Staff list — post immediately then every hour
+    setTimeout(async () => {
+        await updateStaffList();
+        setInterval(updateStaffList, 60 * 60 * 1000);
+    }, 5000);
 });
 
 // ─────────────────────────────────────────
@@ -361,6 +366,7 @@ client.on('messageCreate', async (message) => {
     if (command === 'coins' || command === 'bal') {
         const target = message.mentions.users.first() || message.author;
         const data   = getUserData(target.id);
+        await message.guild.members.fetch();
         const nonAdminUsers = Object.entries(db.users).filter(([id]) => {
             const mem = message.guild.members.cache.get(id);
             return mem && !mem.permissions.has(PermissionsBitField.Flags.Administrator) && !mem.roles.cache.some(r => r.name === 'bot perms');
@@ -368,16 +374,16 @@ client.on('messageCreate', async (message) => {
         const rank = nonAdminUsers.sort(([,a],[,b]) => b.coins - a.coins).findIndex(([id]) => id === target.id) + 1;
         message.channel.send({ embeds: [
             new EmbedBuilder()
+                .setTitle(`💰 Wallet`)
                 .setDescription(
-                    `# ╔═══ 💰 WALLET ═══╗\n` +
-                    `**👤 User:** ${target.username}\n` +
-                    `${coinEmoji} **Coins:** ${data.coins}\n` +
-                    `🏅 **Rank:** #${rank || 'N/A'}\n` +
-                    `⚠️ **Warns:** ${data.warns}\n` +
-                    `# ╚═════════════════╝`
+                    `**User:** ${target}\n` +
+                    `**Coins:** ${data.coins} ${coinEmoji}\n` +
+                    `**Rank:** #${rank || 'N/A'}\n` +
+                    `**Warns:** ${data.warns} ⚠️`
                 )
-                .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+                .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
                 .setColor(0xF1C40F)
+                .setFooter({ text: target.tag })
         ]});
     }
 
@@ -604,6 +610,8 @@ client.on('messageCreate', async (message) => {
                         { name: '`v!mute @user [mins]`',    value: 'Timeout a user (default 60m).' },
                         { name: '`v!unmute @user`',         value: 'Remove timeout.' },
                         { name: '`v!setnick @user <name>`', value: 'Set a user\'s nickname.' },
+                        { name: '`v!promo @user <role>`', value: 'Promote staff member.' },
+                        { name: '`v!demo @user <role>`',  value: 'Demote staff member.' },
                     )
                     .setFooter({ text: 'v!adminhelp for all categories' })
             ]});
@@ -929,6 +937,85 @@ client.on('messageCreate', async (message) => {
         setTimeout(() => endGiveaway(message.channel.id, gMsg.id), durationMs);
     }
 
+
+    // ═══════════════════════════════════════
+    //  PROMO / DEMO
+    // ═══════════════════════════════════════
+
+    if (command === 'promo') {
+        const target   = message.mentions.members.first();
+        const roleName = args.slice(1).join(' ');
+        if (!target)   return message.reply('❌ Mention a user. Usage: `v!promo @user <role name>`');
+        if (!roleName) return message.reply('❌ Provide a role name. Usage: `v!promo @user <role name>`');
+        const newRole  = message.guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+        if (!newRole)  return message.reply(`❌ Role **${roleName}** not found. Check the spelling.`);
+
+        // Remove existing staff roles
+        for (const sRoleName of STAFF_ROLES) {
+            const sRole = message.guild.roles.cache.find(r => r.name === sRoleName);
+            if (sRole && target.roles.cache.has(sRole.id)) await target.roles.remove(sRole).catch(() => {});
+        }
+        await target.roles.add(newRole);
+
+        const promoEmbed = new EmbedBuilder()
+            .setTitle('🎉 Staff Promotion')
+            .setDescription(
+                `Congratulations to ${target}! 🎊\n\n` +
+                `They have been promoted to **${newRole.name}**!\n` +
+                `> Keep up the amazing work and continue representing the server with pride!`
+            )
+            .setThumbnail(target.user.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: '👤 Staff Member', value: `${target}`, inline: true },
+                { name: '🏅 New Role',     value: `**${newRole.name}**`, inline: true },
+                { name: '📋 Promoted by',  value: `${message.author}`, inline: true },
+            )
+            .setColor(0x2ECC71);
+
+        const promoChannel = message.guild.channels.cache.get(PROMO_CHANNEL_ID);
+        if (promoChannel) await promoChannel.send({ content: `${target}`, embeds: [promoEmbed] });
+        message.reply(`✅ **${target.user.username}** has been promoted to **${newRole.name}**!`);
+        await updateStaffList();
+        logger(`Promo: ${target.user.tag} → ${newRole.name} by ${message.author.tag}`);
+    }
+
+    if (command === 'demo') {
+        const target   = message.mentions.members.first();
+        const roleName = args.slice(1).join(' ');
+        if (!target)   return message.reply('❌ Mention a user. Usage: `v!demo @user <new role>`');
+        if (!roleName) return message.reply('❌ Provide the new role. Usage: `v!demo @user <new role>`');
+        const newRole  = message.guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+        if (!newRole)  return message.reply(`❌ Role **${roleName}** not found. Check the spelling.`);
+
+        // Remove existing staff roles
+        for (const sRoleName of STAFF_ROLES) {
+            const sRole = message.guild.roles.cache.find(r => r.name === sRoleName);
+            if (sRole && target.roles.cache.has(sRole.id)) await target.roles.remove(sRole).catch(() => {});
+        }
+        await target.roles.add(newRole);
+
+        const demoEmbed = new EmbedBuilder()
+            .setTitle('📉 Staff Demotion')
+            .setDescription(
+                `${target} has been demoted.\n\n` +
+                `Their new role is **${newRole.name}**.\n` +
+                `> Please reflect on your actions and strive to improve.`
+            )
+            .setThumbnail(target.user.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: '👤 Staff Member', value: `${target}`, inline: true },
+                { name: '📉 New Role',     value: `**${newRole.name}**`, inline: true },
+                { name: '📋 Demoted by',   value: `${message.author}`, inline: true },
+            )
+            .setColor(0xFF4444);
+
+        const demoChannel = message.guild.channels.cache.get(DEMO_CHANNEL_ID);
+        if (demoChannel) await demoChannel.send({ content: `${target}`, embeds: [demoEmbed] });
+        message.reply(`✅ **${target.user.username}** has been demoted to **${newRole.name}**.`);
+        await updateStaffList();
+        logger(`Demo: ${target.user.tag} → ${newRole.name} by ${message.author.tag}`);
+    }
+
     } catch (err) {
         logger(`ERR: ${command} | ${err.message}`);
         message.channel.send({ embeds: [
@@ -936,5 +1023,71 @@ client.on('messageCreate', async (message) => {
         ]});
     }
 });
+
+
+// ─────────────────────────────────────────
+//  STAFF LIST (auto-updates every hour)
+// ─────────────────────────────────────────
+const STAFF_CHANNEL_ID = '1475548875376033854';
+const PROMO_CHANNEL_ID = '1475548886218309692';
+const DEMO_CHANNEL_ID  = '1475548887434526832';
+
+const STAFF_ROLES = [
+    'Founder',
+    'Co-Founder',
+    'Head of all Staff',
+    'Server Manager',
+    'Head Administrator',
+    'Senior Administrator',
+    'Administrator',
+    'Junior Administrator',
+    'Head Moderator',
+    'Senior Moderator',
+    'Moderator',
+    'Trial Moderator',
+];
+
+let staffMessageId = null;
+
+const buildStaffEmbed = async (guild) => {
+    await guild.members.fetch();
+    const fields = [];
+    for (const roleName of STAFF_ROLES) {
+        const role = guild.roles.cache.find(r => r.name === roleName);
+        if (!role) continue;
+        const members = role.members.map(m => `<@${m.id}>`).join('\n') || '_None_';
+        fields.push({ name: `${roleName}`, value: members, inline: false });
+    }
+    return new EmbedBuilder()
+        .setTitle('👥 Staff List')
+        .setDescription('All current staff members by role.')
+        .addFields(fields)
+        .setColor(0x5865F2)
+        .setFooter({ text: `Last updated` });
+};
+
+const updateStaffList = async () => {
+    try {
+        const channel = await client.channels.fetch(STAFF_CHANNEL_ID);
+        const guild   = channel.guild;
+        const embed   = await buildStaffEmbed(guild);
+        if (staffMessageId) {
+            try {
+                const msg = await channel.messages.fetch(staffMessageId);
+                await msg.edit({ embeds: [embed] });
+                logger('Staff list updated.');
+                return;
+            } catch { staffMessageId = null; }
+        }
+        // No existing message — clear channel and post fresh
+        const fetched = await channel.messages.fetch({ limit: 10 });
+        await Promise.all(fetched.map(m => m.delete().catch(() => {})));
+        const sent = await channel.send({ embeds: [embed] });
+        staffMessageId = sent.id;
+        logger('Staff list posted.');
+    } catch (err) {
+        logger(`Staff list error: ${err.message}`);
+    }
+};
 
 client.login(process.env.TOKEN);
