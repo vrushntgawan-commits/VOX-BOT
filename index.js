@@ -90,8 +90,7 @@ const buildGiveawayEmbed = (gw, live = true) => {
                 `**🎟️ Hosted by:** <@${gw.hostId}>`
             )
             .setColor(0xF1C40F)
-            .setFooter({ text: `🎉 Good luck to all participants! • Ends` })
-            .setTimestamp(gw.endsAt);
+            .setFooter({ text: `🎉 Good luck to all participants! • Ends` });
     } else {
         return new EmbedBuilder()
             .setTitle(`${giveawayEmoji}  GIVEAWAY ENDED`)
@@ -103,8 +102,7 @@ const buildGiveawayEmbed = (gw, live = true) => {
                 `**🏅 Winners drawn:** ${gw.winners}`
             )
             .setColor(0x2ECC71)
-            .setFooter({ text: `Giveaway ended` })
-            .setTimestamp();
+            .setFooter({ text: `Giveaway ended` });
     }
 };
 
@@ -186,8 +184,7 @@ const sendWelcome = async (member, channel) => {
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
         .setColor(0x5865F2)
-        .setFooter({ text: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true }) })
-        .setTimestamp();
+        .setFooter({ text: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true }) });
     channel.send({ embeds: [embed] });
 };
 
@@ -201,8 +198,7 @@ const sendGoodbye = async (member, channel) => {
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
         .setColor(0xFF4444)
-        .setFooter({ text: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true }) })
-        .setTimestamp();
+        .setFooter({ text: member.guild.name, iconURL: member.guild.iconURL({ dynamic: true }) });
     channel.send({ embeds: [embed] });
 };
 
@@ -229,31 +225,34 @@ let consecutiveCount = 0;
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // Anti-spam
-    if (message.author.id === lastAuthorId) {
-        consecutiveCount++;
-    } else {
-        lastAuthorId     = message.author.id;
-        consecutiveCount = 1;
-    }
-    if (consecutiveCount >= 5) {
-        const data = getUserData(message.author.id);
-        data.warns  += 1;
-        data.coins   = Math.max(0, data.coins - 50);
-        saveData();
-        consecutiveCount = 0;
-        message.channel.send({ embeds: [
-            new EmbedBuilder()
-                .setTitle('🚫 Anti-Spam Triggered')
-                .setDescription(
-                    `${message.author}, slow down!\n` +
-                    `Too many consecutive messages detected.\n\n` +
-                    `> You lost **50** ${coinEmoji} and received a warning.`
-                )
-                .addFields({ name: '⚠️ Total Warnings', value: `${data.warns}`, inline: true })
-                .setColor(0xFF0000)
-                .setTimestamp()
-        ]});
+    // Anti-spam — only counts regular chat messages, NOT commands
+    if (!message.content.startsWith(prefix)) {
+        if (message.author.id === lastAuthorId) {
+            consecutiveCount++;
+        } else {
+            lastAuthorId     = message.author.id;
+            consecutiveCount = 1;
+        }
+        if (consecutiveCount >= 5) {
+            const data = getUserData(message.author.id);
+            data.warns  += 1;
+            data.coins   = Math.max(0, data.coins - 50);
+            saveData();
+            consecutiveCount = 0;
+            message.channel.send({
+                content: `${message.author}`,
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('🚫 Anti-Spam Triggered')
+                        .setDescription(
+                            `Slow down! You've been sending too many consecutive messages.\n\n` +
+                            `> You lost **50** ${coinEmoji} and received a warning.`
+                        )
+                        .addFields({ name: '⚠️ Total Warnings', value: `${data.warns}`, inline: true })
+                        .setColor(0xFF0000)
+                ]
+            });
+        }
     }
 
     // Earn 1 coin per non-command message
@@ -335,7 +334,6 @@ client.on('messageCreate', async (message) => {
                 )
                 .setColor(0x5865F2)
                 .setFooter({ text: 'Use v!adminhelp for staff commands' })
-                .setTimestamp()
         ]});
     }
 
@@ -346,13 +344,19 @@ client.on('messageCreate', async (message) => {
     if (command === 'coins' || command === 'bal') {
         const target = message.mentions.users.first() || message.author;
         const data   = getUserData(target.id);
+        const rank   = Object.entries(db.users).sort(([,a],[,b]) => b.coins - a.coins).findIndex(([id]) => id === target.id) + 1;
         message.channel.send({ embeds: [
             new EmbedBuilder()
-                .setTitle(`${coinEmoji} Balance`)
-                .setDescription(`**${target.username}** has **${data.coins}** ${coinEmoji}`)
+                .setTitle(`${coinEmoji} ${target.username}'s Wallet`)
+                .setDescription(
+                    `╔══════════════════════╗\n` +
+                    `  ${coinEmoji}  **Coins:** ${data.coins}\n` +
+                    `  🏅  **Rank:** #${rank || '?'}\n` +
+                    `  ⚠️  **Warns:** ${data.warns}\n` +
+                    `╚══════════════════════╝`
+                )
                 .setThumbnail(target.displayAvatarURL({ dynamic: true }))
                 .setColor(0xF1C40F)
-                .setTimestamp()
         ]});
     }
 
@@ -374,7 +378,7 @@ client.on('messageCreate', async (message) => {
             new EmbedBuilder()
                 .setTitle('💼 Work Complete!')
                 .setDescription(`You earned **${earned}** ${coinEmoji}!\n> Balance: **${data.coins}** ${coinEmoji}`)
-                .setColor(0x2ECC71).setTimestamp()
+                .setColor(0x2ECC71)
         ]});
     }
 
@@ -396,7 +400,7 @@ client.on('messageCreate', async (message) => {
             new EmbedBuilder()
                 .setTitle('🎁 Daily Reward!')
                 .setDescription(`You claimed **${earned}** ${coinEmoji}!\n> Balance: **${data.coins}** ${coinEmoji}`)
-                .setColor(0xF1C40F).setTimestamp()
+                .setColor(0xF1C40F)
         ]});
     }
 
@@ -439,7 +443,7 @@ client.on('messageCreate', async (message) => {
                     { name: 'Your Balance',             value: `${senderData.coins} ${coinEmoji}`, inline: true },
                     { name: `${target.username}'s Bal`, value: `${targetData.coins} ${coinEmoji}`, inline: true },
                 )
-                .setColor(0x2ECC71).setTimestamp()
+                .setColor(0x2ECC71)
         ]});
     }
 
@@ -455,7 +459,7 @@ client.on('messageCreate', async (message) => {
             new EmbedBuilder()
                 .setTitle(`${coinEmoji} Coin Leaderboard`)
                 .setDescription(lines || 'No data yet.')
-                .setColor(0xF1C40F).setTimestamp()
+                .setColor(0xF1C40F)
         ]});
     }
 
@@ -484,7 +488,7 @@ client.on('messageCreate', async (message) => {
                     { name: '🔒 Verification', value: `${guild.verificationLevel}`,                            inline: true },
                 )
                 .setColor(0x5865F2)
-                .setFooter({ text: `ID: ${guild.id}` }).setTimestamp()
+                .setFooter({ text: `ID: ${guild.id}` })
         ]});
     }
 
@@ -505,7 +509,7 @@ client.on('messageCreate', async (message) => {
                     { name: '🤖 Bot?',            value: target.user.bot ? 'Yes' : 'No',                         inline: true },
                     { name: '🎭 Top Roles',       value: roles },
                 )
-                .setColor(target.displayHexColor || 0x5865F2).setTimestamp()
+                .setColor(target.displayHexColor || 0x5865F2)
         ]});
     }
 
@@ -530,7 +534,7 @@ client.on('messageCreate', async (message) => {
                     { name: '❓ Question', value: question },
                     { name: '🎱 Answer',   value: responses[Math.floor(Math.random() * responses.length)] },
                 )
-                .setColor(0x2C2F33).setTimestamp()
+                .setColor(0x2C2F33)
         ]});
     }
 
@@ -642,7 +646,6 @@ client.on('messageCreate', async (message) => {
                     { name: `${giveawayEmoji} Giveaway`, value: '`v!adminhelp giveaway`', inline: true },
                     { name: '⚙️ System',              value: '`v!adminhelp system`',   inline: true },
                 )
-                .setTimestamp()
         ]});
     }
 
@@ -699,8 +702,8 @@ client.on('messageCreate', async (message) => {
         if (!target) return message.reply('❌ Mention a user.');
         const mins = parseInt(args[1]) || 60;
         await target.timeout(mins * 60 * 1000, `Muted by ${message.author.tag}`);
-        message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('🔇 User Muted').setDescription(`**${target.user.tag}** muted for **${mins} minute(s)**.`).setColor(0xFF9900).setTimestamp()
+        message.channel.send({ content: `<@${target.id}>`, embeds: [
+            new EmbedBuilder().setTitle('🔇 User Muted').setDescription(`**${target.user.tag}** muted for **${mins} minute(s)**.`).setColor(0xFF9900)
         ]});
     }
 
@@ -709,7 +712,7 @@ client.on('messageCreate', async (message) => {
         if (!target) return message.reply('❌ Mention a user.');
         await target.timeout(null);
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('🔊 User Unmuted').setDescription(`**${target.user.tag}** unmuted.`).setColor(0x2ECC71).setTimestamp()
+            new EmbedBuilder().setTitle('🔊 User Unmuted').setDescription(`**${target.user.tag}** unmuted.`).setColor(0x2ECC71)
         ]});
     }
 
@@ -718,8 +721,8 @@ client.on('messageCreate', async (message) => {
         const reason = args.slice(1).join(' ') || 'No reason provided';
         if (!target) return message.reply('❌ Mention a user.');
         await target.kick(reason);
-        message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('👢 User Kicked').setDescription(`**${target.user.tag}** was kicked.\nReason: ${reason}`).setColor(0xFF9900).setTimestamp()
+        message.channel.send({ content: `<@${target.id}>`, embeds: [
+            new EmbedBuilder().setTitle('👢 User Kicked').setDescription(`**${target.user.tag}** was kicked.\nReason: ${reason}`).setColor(0xFF9900)
         ]});
     }
 
@@ -728,8 +731,8 @@ client.on('messageCreate', async (message) => {
         const reason = args.slice(1).join(' ') || 'No reason provided';
         if (!target) return message.reply('❌ Mention a user.');
         await target.ban({ reason });
-        message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('🔨 User Banned').setDescription(`**${target.user.tag}** was banned.\nReason: ${reason}`).setColor(0xFF0000).setTimestamp()
+        message.channel.send({ content: `<@${target.id}>`, embeds: [
+            new EmbedBuilder().setTitle('🔨 User Banned').setDescription(`**${target.user.tag}** was banned.\nReason: ${reason}`).setColor(0xFF0000)
         ]});
     }
 
@@ -739,8 +742,8 @@ client.on('messageCreate', async (message) => {
         const data = getUserData(target.id);
         data.warns += 1;
         saveData();
-        message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('⚠️ Warning Issued').setDescription(`**${target.tag}** warned. Total: **${data.warns}**.`).setColor(0xFF9900).setTimestamp()
+        message.channel.send({ content: `<@${target.id}>`, embeds: [
+            new EmbedBuilder().setTitle('⚠️ Warning Issued').setDescription(`**${target.tag}** has been warned. Total: **${data.warns}** warning(s).`).setColor(0xFF9900)
         ]});
     }
 
@@ -751,7 +754,7 @@ client.on('messageCreate', async (message) => {
         data.warns = Math.max(0, data.warns - 1);
         saveData();
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('✅ Warning Removed').setDescription(`**${target.tag}** now has **${data.warns}** warning(s).`).setColor(0x2ECC71).setTimestamp()
+            new EmbedBuilder().setTitle('✅ Warning Removed').setDescription(`**${target.tag}** now has **${data.warns}** warning(s).`).setColor(0x2ECC71)
         ]});
     }
 
@@ -759,7 +762,7 @@ client.on('messageCreate', async (message) => {
         const target = message.mentions.users.first() || message.author;
         const data   = getUserData(target.id);
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle(`⚠️ Warnings — ${target.username}`).setDescription(`**${data.warns}** warning(s).`).setColor(0xFF9900).setTimestamp()
+            new EmbedBuilder().setTitle(`⚠️ Warnings — ${target.username}`).setDescription(`**${data.warns}** warning(s).`).setColor(0xFF9900)
         ]});
     }
 
@@ -770,21 +773,21 @@ client.on('messageCreate', async (message) => {
         if (!nick)   return message.reply('❌ Provide a nickname.');
         await target.setNickname(nick);
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('✏️ Nickname Changed').setDescription(`**${target.user.tag}**'s nickname → **${nick}**.`).setColor(0x5865F2).setTimestamp()
+            new EmbedBuilder().setTitle('✏️ Nickname Changed').setDescription(`**${target.user.tag}**'s nickname → **${nick}**.`).setColor(0x5865F2)
         ]});
     }
 
     if (command === 'lock') {
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('🔒 Channel Locked').setDescription(`**#${message.channel.name}** locked by ${message.author}.`).setColor(0xFF0000).setTimestamp()
+            new EmbedBuilder().setTitle('🔒 Channel Locked').setDescription(`**#${message.channel.name}** locked by ${message.author}.`).setColor(0xFF0000)
         ]});
     }
 
     if (command === 'unlock') {
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
         message.channel.send({ embeds: [
-            new EmbedBuilder().setTitle('🔓 Channel Unlocked').setDescription(`**#${message.channel.name}** unlocked by ${message.author}.`).setColor(0x2ECC71).setTimestamp()
+            new EmbedBuilder().setTitle('🔓 Channel Unlocked').setDescription(`**#${message.channel.name}** unlocked by ${message.author}.`).setColor(0x2ECC71)
         ]});
     }
 
@@ -834,7 +837,7 @@ client.on('messageCreate', async (message) => {
             new EmbedBuilder()
                 .setTitle('🖥️ Bot Logs')
                 .setDescription(`\`\`\`txt\n${botLogs.join('\n') || 'Empty'}\n\`\`\``)
-                .setColor(0x2C2F33).setTimestamp()
+                .setColor(0x2C2F33)
         ]});
     }
 
@@ -869,7 +872,7 @@ client.on('messageCreate', async (message) => {
             ]});
 
         const endsAt = Date.now() + durationMs;
-        const prize  = `${coinsArg} ${coinEmoji}`;
+        const prize  = `${coinEmoji} ${coinsArg} ${coinEmoji}`;
 
         const gwData = {
             prize,
