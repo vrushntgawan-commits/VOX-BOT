@@ -2,7 +2,8 @@ const {
     Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder,
     ButtonBuilder, ButtonStyle, ActionRowBuilder, ChannelType
 } = require('discord.js');
-const fs = require('fs');
+const fs   = require('fs');
+const https = require('https');
 
 const client = new Client({
     intents: [
@@ -52,11 +53,65 @@ const CHEST_REWARDS = [
 ];
 
 // ─────────────────────────────────────────
-//  DATABASE
+//  DATABASE  — uses JSONbin if env vars set, falls back to local file
+//
+//  Set these environment variables on your host:
+//    JSONBIN_BIN_ID  — the bin ID from jsonbin.io (e.g. 64abc123...)
+//    JSONBIN_API_KEY — your JSONbin Master Key or Access Key
+//
+//  If neither is set, data is saved locally to database.json (lost on restart
+//  on ephemeral hosts like Render free tier / Replit).
 // ─────────────────────────────────────────
+const JSONBIN_BIN_ID  = process.env.JSONBIN_BIN_ID  || null;
+const JSONBIN_API_KEY = process.env.JSONBIN_API_KEY || null;
+const USE_JSONBIN     = !!(JSONBIN_BIN_ID && JSONBIN_API_KEY);
+
 let db = { users: {}, giveaways: {}, staffMessageId: null, invites: {}, tickets: {}, chestShopMessageId: null };
 
-const loadDB = () => {
+// ── JSONbin helpers ──
+const jsonbinRequest = (method, body = null) => new Promise((resolve, reject) => {
+    const options = {
+        hostname: 'api.jsonbin.io',
+        path:     `/v3/b/${JSONBIN_BIN_ID}`,
+        method,
+        headers: {
+            'X-Master-Key': JSONBIN_API_KEY,
+            'Content-Type': 'application/json',
+            ...(method === 'GET' ? { 'X-Bin-Meta': 'false' } : {}),
+        },
+    };
+    const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+            try { resolve(JSON.parse(data)); }
+            catch { resolve(null); }
+        });
+    });
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+});
+
+const loadDB = async () => {
+    if (USE_JSONBIN) {
+        try {
+            console.log('Loading DB from JSONbin...');
+            const res = await jsonbinRequest('GET');
+            if (res && res.record) {
+                const raw             = res.record;
+                db.users              = raw.users              || {};
+                db.giveaways          = raw.giveaways          || {};
+                db.staffMessageId     = raw.staffMessageId     || null;
+                db.invites            = raw.invites            || {};
+                db.tickets            = raw.tickets            || {};
+                db.chestShopMessageId = raw.chestShopMessageId || null;
+                console.log('DB loaded from JSONbin ✓');
+                return;
+            }
+        } catch (e) { console.error('JSONbin load error:', e.message); }
+    }
+    // Fallback: local file
     if (!fs.existsSync('./database.json')) return;
     try {
         const raw             = JSON.parse(fs.readFileSync('./database.json', 'utf8'));
@@ -66,17 +121,29 @@ const loadDB = () => {
         db.invites            = raw.invites            || {};
         db.tickets            = raw.tickets            || {};
         db.chestShopMessageId = raw.chestShopMessageId || null;
+        console.log('DB loaded from local file ✓');
     } catch { console.log('DB load error — starting fresh.'); }
 };
-loadDB();
 
+let _savePending = false;
 const saveData = () => {
-    try { fs.writeFileSync('./database.json', JSON.stringify(db, null, 2)); }
-    catch (e) { console.error('SAVE ERROR:', e.message); }
+    // Always write local file as backup
+    try { fs.writeFileSync('./database.json', JSON.stringify(db, null, 2)); } catch {}
+
+    if (!USE_JSONBIN) return;
+    // Debounce — if a save is already queued, skip queueing another
+    if (_savePending) return;
+    _savePending = true;
+    setTimeout(async () => {
+        _savePending = false;
+        try {
+            await jsonbinRequest('PUT', db);
+        } catch (e) { console.error('JSONbin save error:', e.message); }
+    }, 1500); // wait 1.5s to batch rapid saves
 };
 
-// Auto-save every 60s as a safety net
-setInterval(saveData, 60_000);
+// Auto-save every 5 minutes as a safety net
+setInterval(saveData, 300_000);
 
 // Save on process exit
 process.on('SIGINT',  () => { saveData(); process.exit(); });
@@ -422,7 +489,12 @@ const cacheInvites = async (guild) => {
 //  READY
 // ─────────────────────────────────────────
 client.once('ready', async () => {
+    // Load DB first (JSONbin or local file) before doing anything else
+    await loadDB();
+
     logger(`Bot Active — ${client.user.tag}`);
+    if (USE_JSONBIN) logger('Persistence: JSONbin ✓');
+    else logger('Persistence: local file (coins will reset on host restart if filesystem is ephemeral!)');
 
     // Resume giveaways
     for (const [id, gw] of Object.entries(db.giveaways)) {
