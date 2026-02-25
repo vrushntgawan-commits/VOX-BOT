@@ -239,12 +239,10 @@ const buildStaffEmbed = async (guild) => {
             fields.push({ name: `▸ ${rn}`, value: '_None_', inline: false });
             continue;
         }
-        const memberList = role.members.size > 0 ? role.members.map(m => `<@${m.id}>`).join('  ') : '_None_';
-        // Field name = plain role name (Discord does NOT render mentions in field names)
-        // Field value = role mention (clickable/pingable) + member list
+        const memberList = role.members.size > 0 ? role.members.map(m => `<@${m.id}>`).join('\n') : '_None_';
         fields.push({
-            name: `▸ ${role.name} (${role.members.size})`,
-            value: `<@&${role.id}>\n${memberList}`,
+            name: `<@&${role.id}> (${role.members.size})`,
+            value: memberList,
             inline: false,
         });
     }
