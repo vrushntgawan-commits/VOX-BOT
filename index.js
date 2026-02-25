@@ -234,10 +234,19 @@ const buildStaffEmbed = async (guild) => {
     for (const rn of STAFF_ROLES) {
         const role = guild.roles.cache.find(r => r.name.toLowerCase().includes(rn.toLowerCase()))
             || guild.roles.cache.find(r => rn.toLowerCase().includes(r.name.toLowerCase()) && r.name.length > 3);
-        if (!role) { fields.push({ name: rn, value: '_None_', inline: false }); continue; }
-        const memberList = role.members.size > 0 ? role.members.map(m => `<@${m.id}>`).join('\n') : '_None_';
-        // <@&roleId> makes the heading a clickable/pingable role mention
-        fields.push({ name: `<@&${role.id}> (${role.members.size})`, value: memberList, inline: false });
+        if (!role) {
+            // No role found — show plain name with no members
+            fields.push({ name: `▸ ${rn}`, value: '_None_', inline: false });
+            continue;
+        }
+        const memberList = role.members.size > 0 ? role.members.map(m => `<@${m.id}>`).join('  ') : '_None_';
+        // Field name = plain role name (Discord does NOT render mentions in field names)
+        // Field value = role mention (clickable/pingable) + member list
+        fields.push({
+            name: `▸ ${role.name} (${role.members.size})`,
+            value: `<@&${role.id}>\n${memberList}`,
+            inline: false,
+        });
     }
     return new EmbedBuilder()
         .setTitle('👥 Staff List')
@@ -281,7 +290,7 @@ const buildGiveawayEmbed = (gw, live=true) => {
     if (live) return new EmbedBuilder()
         .setTitle(`${giveawayEmoji}  G I V E A W A Y  ${giveawayEmoji}`)
         .setDescription(
-            `## 🎁 ${gw.prize}\n\n` +
+            `## ${giveawayEmoji} ${gw.prize} ${giveawayEmoji}\n\n` +
             `> React with ${giveawayEmoji} to enter!\n\n` +
             `**⏰ Ends:** <t:${ts}:R> *(<t:${ts}:f>)*\n` +
             `**🏆 Winners:** ${gw.winners}\n` +
