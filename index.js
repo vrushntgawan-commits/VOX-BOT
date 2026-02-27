@@ -520,6 +520,9 @@ client.on('messageCreate', async (message) => {
     if(message.author.bot)return;
 
     if(!message.content.startsWith(PREFIX)){
+        // No coin gain/loss or spam penalties in this channel
+        if(message.channel.id === '1476246808517673063') return;
+
         const chan = message.channel.id;
         const prev = lastMsgPerChannel.get(chan);
 
